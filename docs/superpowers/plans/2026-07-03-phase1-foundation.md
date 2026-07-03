@@ -1,6 +1,6 @@
 # Root Repo Modernization — Phase 1 Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build `hubwise-py-core` v0.1 (config, guards, http, logging, state — fully tested, no Azure required to run the suite) and scaffold the three Function App repos (`hubwise-sync`, `hubwise-procurement`, `hubwise-fw-lifecycle`), so that `hubwise-sync` can carry a hello-world timer function through the Phase 1 OIDC-deploy gate the moment the Cowork-side dependencies (GitHub repos, Entra OIDC federation, `rg-hubwise-automation`) exist.
 
@@ -41,7 +41,7 @@ Repo root: `C:\Users\swilson\hubwise-py-core` (git already initialized locally, 
 **Interfaces:**
 - Produces: an installable package `hubwise_py_core` importable by later tasks; a `pytest` + `ruff check` CI gate later tasks must stay green against.
 
-- [ ] **Step 1: Write `pyproject.toml`**
+- [x] **Step 1: Write `pyproject.toml`**
 
 ```toml
 [build-system]
@@ -76,7 +76,7 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 ```
 
-- [ ] **Step 2: Write `.gitignore`**
+- [x] **Step 2: Write `.gitignore`**
 
 ```
 .venv/
@@ -106,7 +106,7 @@ Thumbs.db
 desktop.ini
 ```
 
-- [ ] **Step 3: Write `src/hubwise_py_core/__init__.py`**
+- [x] **Step 3: Write `src/hubwise_py_core/__init__.py`**
 
 ```python
 """HubWise shared Python library for Azure Functions automation.
@@ -119,7 +119,7 @@ gate), http (retrying requests session), logging (structured summary lines
 __version__ = "0.1.0"
 ```
 
-- [ ] **Step 4: Write `README.md`**
+- [x] **Step 4: Write `README.md`**
 
 ```markdown
 # hubwise-py-core
@@ -150,7 +150,7 @@ project — see that document for full architecture and decision log.
     pytest
 ```
 
-- [ ] **Step 5: Write `.github/workflows/ci.yml`**
+- [x] **Step 5: Write `.github/workflows/ci.yml`**
 
 ```yaml
 name: CI
@@ -173,7 +173,7 @@ jobs:
       - run: pytest -v
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd ~/hubwise-py-core
@@ -192,7 +192,7 @@ git commit -m "chore: scaffold hubwise-py-core packaging, lint, and CI"
 **Interfaces:**
 - Produces: `WriteGuard(env: dict | None = None)` with properties `.dry_run: bool`, `.allow_prod: bool`, `.writes_allowed: bool`, and method `.check_write(description: str) -> bool`. Every write-capable client built in later phases calls `guard.check_write(...)` before performing a real write.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_guards.py
@@ -242,12 +242,12 @@ def test_env_values_are_stripped_of_whitespace_and_cr():
     assert guard.writes_allowed is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd ~/hubwise-py-core && pip install -e ".[dev]" && pytest tests/test_guards.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hubwise_py_core.guards'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/hubwise_py_core/guards.py
@@ -296,12 +296,12 @@ class WriteGuard:
         return False
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_guards.py -v`
 Expected: 7 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hubwise_py_core/guards.py tests/test_guards.py
@@ -319,7 +319,7 @@ git commit -m "feat: add WriteGuard DRY_RUN/ALLOW_PROD dual-gate"
 **Interfaces:**
 - Produces: `require(name, env=None) -> str` (raises `MissingConfigError` if absent/empty), `optional(name, default="", env=None) -> str`, `flag(name, default="0", env=None) -> bool`. Per-app `Config` dataclasses in later phases (e.g. `hubwise-sync`'s own `config.py`) build on these.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_config.py
@@ -370,12 +370,12 @@ def test_flag_uses_default_when_missing():
     assert flag("DRY_RUN", default="0", env={}) is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_config.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hubwise_py_core.config'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/hubwise_py_core/config.py
@@ -416,12 +416,12 @@ def flag(name: str, default: str = "0", env: dict | None = None) -> bool:
     return env.get(name, default).strip() == "1"
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_config.py -v`
 Expected: 9 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hubwise_py_core/config.py tests/test_config.py
@@ -439,7 +439,7 @@ git commit -m "feat: add fail-loud config loading (require/optional/flag)"
 **Interfaces:**
 - Produces: `build_session(timeout=30, max_retries=3, backoff_factor=1.0) -> requests.Session`, constants `DEFAULT_TIMEOUT_SECONDS`, `DEFAULT_MAX_RETRIES`, `RETRYABLE_STATUS_CODES`. Every vendor client in later phases (`cw_manage.py`, `hudu.py`, etc.) builds its session via this function.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_http.py
@@ -526,12 +526,12 @@ def test_session_explicit_timeout_overrides_default(monkeypatch):
     assert captured["timeout"] == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_http.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hubwise_py_core.http'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/hubwise_py_core/http.py
@@ -593,12 +593,12 @@ def build_session(
     return session
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_http.py -v`
 Expected: 9 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hubwise_py_core/http.py tests/test_http.py
@@ -616,7 +616,7 @@ git commit -m "feat: add retrying HTTP session builder"
 **Interfaces:**
 - Produces: `summary(job, read=0, written=0, skipped=0, errors=0, logger=None)`, `alert(marker, detail, logger=None)`, `redact(value) -> str`, `SecretRedactionFilter` (a `logging.Filter`). Every timer function's final line calls `summary(...)`; degraded-condition paths call `alert(...)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_logging.py
@@ -689,12 +689,12 @@ def test_secret_redaction_filter_leaves_non_secret_pairs_alone():
     assert record.getMessage() == "job=sync read=42 written=5"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_logging.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hubwise_py_core.logging'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/hubwise_py_core/logging.py
@@ -771,12 +771,12 @@ class SecretRedactionFilter(logging.Filter):
         return f"{match.group('key')}{match.group('sep')}{_REDACTED}"
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_logging.py -v`
 Expected: 8 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hubwise_py_core/logging.py tests/test_logging.py
@@ -794,7 +794,7 @@ git commit -m "feat: add structured summary logging, alert markers, secret redac
 **Interfaces:**
 - Produces: `ActionStateStore` (Protocol: `get_action`, `record_action`, `clear_action`), `InMemoryActionStateStore` (tests/dry-run), `TableActionStateStore` (azure-data-tables backed, managed identity). Every writer function in later phases holds one of these and checks `get_action` before writing, `record_action` after.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_state.py
@@ -882,12 +882,12 @@ def test_table_store_get_action_returns_recorded_id(mock_client_cls, mock_cred):
     assert store.get_action("po-tracking", "PO123") == "ticket-789"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_state.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'hubwise_py_core.state'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/hubwise_py_core/state.py
@@ -983,12 +983,12 @@ class TableActionStateStore:
             pass
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_state.py -v`
 Expected: 9 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hubwise_py_core/state.py tests/test_state.py
@@ -1001,12 +1001,12 @@ git commit -m "feat: add Table Storage idempotency action state store"
 
 **Files:** none new — verification only.
 
-- [ ] **Step 1: Run the full suite and lint**
+- [x] **Step 1: Run the full suite and lint**
 
 Run: `cd ~/hubwise-py-core && pytest -v && ruff check .`
 Expected: all tests pass (5 modules × their test files, ~42 tests total), zero ruff findings.
 
-- [ ] **Step 2: Tag v0.1.0**
+- [x] **Step 2: Tag v0.1.0**
 
 ```bash
 git tag -a v0.1.0 -m "hubwise-py-core v0.1.0: config, guards, http, logging, state"
@@ -1037,7 +1037,7 @@ Repo root: `C:\Users\swilson\hubwise-sync` (create fresh, same pattern as `hubwi
 - Consumes: `hubwise_py_core.config.require/optional`, `hubwise_py_core.state.TableActionStateStore`, `hubwise_py_core.logging.summary`.
 - Produces: `function_app.py`'s `app = func.FunctionApp()` object other timer functions in Phase 2+ register against; `src/sync/` as the package home for `sync_cw_sites_to_hudu` and its siblings.
 
-- [ ] **Step 1: Write `.gitignore`** (identical to `hubwise-fwmon`'s, adapted)
+- [x] **Step 1: Write `.gitignore`** (identical to `hubwise-fwmon`'s, adapted)
 
 ```
 .venv/
@@ -1070,7 +1070,7 @@ Thumbs.db
 desktop.ini
 ```
 
-- [ ] **Step 2: Write `host.json`**
+- [x] **Step 2: Write `host.json`**
 
 ```json
 {
@@ -1090,7 +1090,7 @@ desktop.ini
 }
 ```
 
-- [ ] **Step 3: Write `requirements.txt`**
+- [x] **Step 3: Write `requirements.txt`**
 
 ```
 azure-functions>=1.21.0
@@ -1100,7 +1100,7 @@ requests>=2.31
 hubwise-py-core @ git+https://github.com/hubwisetech/hubwise-py-core@v0.1.0
 ```
 
-- [ ] **Step 4: Write `src/sync/__init__.py`**
+- [x] **Step 4: Write `src/sync/__init__.py`**
 
 ```python
 """Business logic package for the hubwise-sync Function App.
@@ -1111,7 +1111,7 @@ package is the unit-tested layer underneath.
 """
 ```
 
-- [ ] **Step 5: Write `function_app.py`** (thin entry — one hello-world timer for the Phase 1 gate)
+- [x] **Step 5: Write `function_app.py`** (thin entry — one hello-world timer for the Phase 1 gate)
 
 ```python
 """hubwise-sync Function App — thin entry point.
@@ -1137,7 +1137,7 @@ def health_check_ping(timer: func.TimerRequest) -> None:
     run_health_check_ping()
 ```
 
-- [ ] **Step 6: Write `.github/workflows/ci-cd.yml`**
+- [x] **Step 6: Write `.github/workflows/ci-cd.yml`**
 
 ```yaml
 name: CI/CD
@@ -1190,7 +1190,7 @@ jobs:
           package: .
 ```
 
-- [ ] **Step 7: Initialize repo and commit**
+- [x] **Step 7: Initialize repo and commit**
 
 ```bash
 mkdir -p ~/hubwise-sync/src/sync ~/hubwise-sync/.github/workflows ~/hubwise-sync/tests ~/hubwise-sync/infra/modules ~/hubwise-sync/scripts
@@ -1213,7 +1213,7 @@ git commit -m "chore: scaffold hubwise-sync repo layout"
 - Consumes: `hubwise_py_core.config.require`, `hubwise_py_core.state.ActionStateStore` (injected), `hubwise_py_core.logging.summary`.
 - Produces: `run_health_check_ping(state_store=None, env=None) -> None` — the pure-logic function `function_app.py`'s `health_check_ping` wraps. Building the real `TableActionStateStore` from `STORAGE_TABLE_URL` happens inside this function (the one Azure-touching seam), so tests inject an `InMemoryActionStateStore` instead.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_health_check.py
@@ -1254,12 +1254,12 @@ def test_health_check_ping_is_a_noop_write_when_value_unchanged(caplog):
     assert "skipped=1" in caplog.text
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd ~/hubwise-sync && pip install -e "../hubwise-py-core" && pytest tests/test_health_check.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'sync.health_check'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/sync/health_check.py
@@ -1296,12 +1296,12 @@ def run_health_check_ping(
     summary("health_check_ping", read=1, written=1, skipped=0, errors=0)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_health_check.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Wire the real Table Storage store into `function_app.py`**
+- [x] **Step 5: Wire the real Table Storage store into `function_app.py`**
 
 Update `function_app.py`'s `health_check_ping` to build the production
 store from config when `state_store` is not injected:
@@ -1336,7 +1336,7 @@ def health_check_ping(timer: func.TimerRequest) -> None:
     run_health_check_ping(state_store=store)
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/sync/health_check.py tests/test_health_check.py function_app.py
@@ -1359,7 +1359,7 @@ This task produces infrastructure-as-code only. **Do not run `az deployment sub 
 **Interfaces:**
 - Produces: a subscription-scoped deployment that creates `rg-hubwise-automation`, a storage account, a budget alert, and the `hubwise-sync` Flex Consumption Function App with system-assigned MI granted `Key Vault Secrets User` on the existing `hubwise-ops` vault and `Storage Table/Blob/Queue` data roles on its own storage account, with App Insights bound to the existing `hubwise-fwmon-law` Log Analytics workspace (runbook §4.2's explicit recommendation to reuse it).
 
-- [ ] **Step 1: Write `infra/modules/storage.bicep`** (adapted from `hubwise-fwmon`'s `storage.bicep` pattern — Standard_LRS is sufficient here, no ZRS requirement since this app has no HA/multi-region need)
+- [x] **Step 1: Write `infra/modules/storage.bicep`** (adapted from `hubwise-fwmon`'s `storage.bicep` pattern — Standard_LRS is sufficient here, no ZRS requirement since this app has no HA/multi-region need)
 
 ```bicep
 // Storage account for hubwise-sync: Table Storage idempotency state +
@@ -1393,7 +1393,7 @@ output blobEndpoint string = sa.properties.primaryEndpoints.blob
 output queueEndpoint string = sa.properties.primaryEndpoints.queue
 ```
 
-- [ ] **Step 2: Write `infra/modules/sync-app.bicep`** (adapted from `hubwise-fwmon`'s `reconciler-app.bicep`, targeting the existing `hubwise-ops` vault and `hubwise-fwmon-law` workspace by resource ID rather than a locally-created one)
+- [x] **Step 2: Write `infra/modules/sync-app.bicep`** (adapted from `hubwise-fwmon`'s `reconciler-app.bicep`, targeting the existing `hubwise-ops` vault and `hubwise-fwmon-law` workspace by resource ID rather than a locally-created one)
 
 ```bicep
 // hubwise-sync Function App (Flex Consumption, Python 3.12).
@@ -1581,7 +1581,7 @@ output functionAppName string = app.name
 output defaultHostName string = app.properties.defaultHostName
 ```
 
-- [ ] **Step 3: Write `infra/modules/kv-role-assignment.bicep`** (a tiny cross-resource-group module — the KV lives in `rg-hubwise-secrets`, not `rg-hubwise-automation`, so its role assignment must be deployed at that RG's scope)
+- [x] **Step 3: Write `infra/modules/kv-role-assignment.bicep`** (a tiny cross-resource-group module — the KV lives in `rg-hubwise-secrets`, not `rg-hubwise-automation`, so its role assignment must be deployed at that RG's scope)
 
 ```bicep
 // Grants a role on the existing hubwise-ops Key Vault, deployed at the
@@ -1606,7 +1606,7 @@ resource ra 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 ```
 
-- [ ] **Step 4: Write `infra/modules/budget.bicep`** (runbook §4.4 — $50/mo tripwire)
+- [x] **Step 4: Write `infra/modules/budget.bicep`** (runbook §4.4 — $50/mo tripwire)
 
 ```bicep
 // $50/mo budget alert tripwire on the automation resource group (runbook
@@ -1637,7 +1637,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
 }
 ```
 
-- [ ] **Step 5: Write `infra/main.bicep`** (subscription-scoped, composes the modules)
+- [x] **Step 5: Write `infra/main.bicep`** (subscription-scoped, composes the modules)
 
 ```bicep
 // =============================================================================
@@ -1728,7 +1728,7 @@ output functionAppName string = syncApp.outputs.functionAppName
 output principalId string = syncApp.outputs.principalId
 ```
 
-- [ ] **Step 6: Write `infra/main.parameters.json`**
+- [x] **Step 6: Write `infra/main.parameters.json`**
 
 ```json
 {
@@ -1745,7 +1745,7 @@ output principalId string = syncApp.outputs.principalId
 }
 ```
 
-- [ ] **Step 7: Validate (build only — no deploy)**
+- [x] **Step 7: Validate (build only — no deploy)**
 
 Run: `cd ~/hubwise-sync/infra && az bicep build --file main.bicep`
 Expected: compiles to `main.json` with no errors (a missing-module or type error will surface here before any deploy is attempted).
@@ -1753,7 +1753,7 @@ Expected: compiles to `main.json` with no errors (a missing-module or type error
 Run: `az bicep lint --file main.bicep`
 Expected: no errors (warnings acceptable, review any that appear).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cd ~/hubwise-sync
@@ -1775,7 +1775,7 @@ These two apps have no functions to build until Phase 4 (fw-lifecycle) and Phase
 - Create: `C:\Users\swilson\hubwise-fw-lifecycle\.gitignore`
 - Create: `C:\Users\swilson\hubwise-fw-lifecycle\README.md`
 
-- [ ] **Step 1: Scaffold `hubwise-procurement`**
+- [x] **Step 1: Scaffold `hubwise-procurement`**
 
 ```bash
 mkdir -p ~/hubwise-procurement/src/procurement ~/hubwise-procurement/tests ~/hubwise-procurement/infra/modules ~/hubwise-procurement/scripts
@@ -1802,7 +1802,7 @@ git add .gitignore README.md
 git commit -m "chore: scaffold hubwise-procurement repo shell (functions land in Phase 5)"
 ```
 
-- [ ] **Step 2: Scaffold `hubwise-fw-lifecycle`**
+- [x] **Step 2: Scaffold `hubwise-fw-lifecycle`**
 
 ```bash
 mkdir -p ~/hubwise-fw-lifecycle/src/fw_lifecycle ~/hubwise-fw-lifecycle/tests ~/hubwise-fw-lifecycle/infra/modules ~/hubwise-fw-lifecycle/scripts
