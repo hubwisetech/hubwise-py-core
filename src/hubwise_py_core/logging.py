@@ -27,7 +27,7 @@ def summary(
     written: int = 0,
     skipped: int = 0,
     errors: int = 0,
-    logger: "logging.Logger | None" = None,
+    logger: logging.Logger | None = None,
 ) -> None:
     """Emit the one-line-per-run structured summary (Transition Plan D-10)."""
     log = logger or logging.getLogger(job)
@@ -37,7 +37,7 @@ def summary(
     )
 
 
-def alert(marker: str, detail: str, logger: "logging.Logger | None" = None) -> None:
+def alert(marker: str, detail: str, logger: logging.Logger | None = None) -> None:
     """Emit a greppable alert marker line (e.g. SYNC_DEGRADED,
     FW_UPGRADE_HALTED, CALLBACK_REJECTED — Transition Plan D-10) for an
     Azure Monitor scheduled-query alert rule to match on. ``marker`` should
@@ -67,5 +67,5 @@ class SecretRedactionFilter(logging.Filter):
         return True
 
     @staticmethod
-    def _redact_match(match: "re.Match[str]") -> str:
+    def _redact_match(match: re.Match[str]) -> str:
         return f"{match.group('key')}{match.group('sep')}{_REDACTED}"

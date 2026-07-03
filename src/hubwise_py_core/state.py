@@ -11,11 +11,11 @@ so a re-run against the same condition is a no-op. Two implementations:
 """
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 class ActionStateStore(Protocol):
-    def get_action(self, partition: str, condition_key: str) -> Optional[str]:
+    def get_action(self, partition: str, condition_key: str) -> str | None:
         """Return the previously recorded action_id for this condition, or None."""
         ...
 
@@ -32,7 +32,7 @@ class InMemoryActionStateStore:
     def __init__(self):
         self._actions: dict[tuple[str, str], str] = {}
 
-    def get_action(self, partition: str, condition_key: str) -> Optional[str]:
+    def get_action(self, partition: str, condition_key: str) -> str | None:
         return self._actions.get((partition, condition_key))
 
     def record_action(self, partition: str, condition_key: str, action_id: str) -> None:
@@ -65,7 +65,7 @@ class TableActionStateStore:
             else svc.get_table_client(table_name)
         )
 
-    def get_action(self, partition: str, condition_key: str) -> Optional[str]:
+    def get_action(self, partition: str, condition_key: str) -> str | None:
         from azure.core.exceptions import ResourceNotFoundError
 
         try:

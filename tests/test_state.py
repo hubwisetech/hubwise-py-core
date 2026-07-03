@@ -2,6 +2,8 @@ from unittest.mock import MagicMock, patch
 
 from hubwise_py_core.state import InMemoryActionStateStore, TableActionStateStore
 
+ACCOUNT_URL = "https://acct.table.core.windows.net"
+
 
 def test_get_action_returns_none_when_unset():
     store = InMemoryActionStateStore()
@@ -51,7 +53,7 @@ def test_table_store_get_action_returns_none_on_missing_entity(mock_client_cls, 
     mock_table.get_entity.side_effect = ResourceNotFoundError("not found")
     mock_client_cls.return_value.create_table_if_not_exists.return_value = mock_table
 
-    store = TableActionStateStore(account_url="https://acct.table.core.windows.net", table_name="state")
+    store = TableActionStateStore(account_url=ACCOUNT_URL, table_name="state")
     assert store.get_action("po-tracking", "PO123") is None
 
 
@@ -61,7 +63,7 @@ def test_table_store_record_action_upserts_entity(mock_client_cls, mock_cred):
     mock_table = MagicMock()
     mock_client_cls.return_value.create_table_if_not_exists.return_value = mock_table
 
-    store = TableActionStateStore(account_url="https://acct.table.core.windows.net", table_name="state")
+    store = TableActionStateStore(account_url=ACCOUNT_URL, table_name="state")
     store.record_action("po-tracking", "PO123", "ticket-789")
 
     mock_table.upsert_entity.assert_called_once_with({
@@ -78,5 +80,5 @@ def test_table_store_get_action_returns_recorded_id(mock_client_cls, mock_cred):
     mock_table.get_entity.return_value = {"action_id": "ticket-789"}
     mock_client_cls.return_value.create_table_if_not_exists.return_value = mock_table
 
-    store = TableActionStateStore(account_url="https://acct.table.core.windows.net", table_name="state")
+    store = TableActionStateStore(account_url=ACCOUNT_URL, table_name="state")
     assert store.get_action("po-tracking", "PO123") == "ticket-789"
