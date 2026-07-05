@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+local.settings.json
+*.env
+.env
+.env.*
+
+# Secrets / certs (NEVER commit)
+*.pfx
+*.pem
+*.p12
+*.key
+*.cer
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini

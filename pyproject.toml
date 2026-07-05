@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hubwise-py-core"
+version = "0.1.0"
+description = "Shared Python library for HubWise Azure Functions automation: config, write guards, HTTP retry session, structured logging, Table Storage idempotency state."
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.31",
+    "azure-identity>=1.17.0",
+    "azure-data-tables>=12.5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
