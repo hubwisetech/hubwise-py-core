@@ -103,6 +103,30 @@ def test_list_active_sites_drops_inactive():
     assert [s["id"] for s in active] == [10, 12]
 
 
+def test_list_contacts_with_types_filters_and_paginates():
+    page1 = [
+        {"id": 1, "firstName": "Amy", "lastName": "A", "inactiveFlag": False,
+         "company": {"id": 100}, "types": [{"id": 14, "name": "HubWise Primary Contact"}]},
+        {"id": 2, "firstName": "Bob", "lastName": "B", "inactiveFlag": False,
+         "company": {"id": 100}, "types": [{"id": 3, "name": "End User"}]},
+    ]
+    page2 = [
+        {"id": 3, "firstName": "Cy", "lastName": "C", "inactiveFlag": False,
+         "company": {"id": 101}, "types": [{"id": 1, "name": "Approver"}]},
+        {"id": 4, "firstName": "Di", "lastName": "D", "inactiveFlag": True,
+         "company": {"id": 101}, "types": [{"id": 14, "name": "HubWise Primary Contact"}]},
+    ]
+    session = FakeSession([
+        ("/company/contacts", lambda p: int(p.get("page", 1)) == 1, page1),
+        ("/company/contacts", lambda p: int(p.get("page", 1)) == 2, page2),
+        ("/company/contacts", lambda p: int(p.get("page", 1)) >= 3, []),
+    ])
+    got = _client(session, page_size=2).list_contacts_with_types(
+        {"HubWise Primary Contact", "Approver"})
+    # Amy (primary) + Cy (approver); Bob (End User) dropped; Di (inactive) dropped
+    assert [c["id"] for c in got] == [1, 3]
+
+
 def test_site_code_reads_custom_field_15():
     site = {"id": 12, "name": "OMA2", "customFields": [
         {"id": 15, "caption": "HubWise Site Code", "value": "OMA2"},

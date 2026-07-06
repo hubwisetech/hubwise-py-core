@@ -151,3 +151,28 @@ def test_set_archived_suppressed_under_default_guard():
     ok = _client(session).set_archived(7, 1, True)
     assert ok is False
     assert not any(c[0] == "PUT" for c in session.calls)
+
+
+def test_upsert_magic_dash_issued_under_open_guard():
+    session = FakeSession()
+    result = _client(session, guard=_open_guard()).upsert_magic_dash(
+        title="Primary Contact and Approvers", company_name="Acme",
+        message="Primary: Amy A", content="<table></table>", shade="success",
+        icon="fas fa-user-tie")
+    assert result is not None
+    post = [c for c in session.calls if c[0] == "POST"]
+    assert len(post) == 1 and post[0][1].endswith("/magic_dash")
+    body = post[0][3]
+    assert body["title"] == "Primary Contact and Approvers"
+    assert body["company_name"] == "Acme"
+    assert body["message"] == "Primary: Amy A"
+    assert body["content"] == "<table></table>"
+    assert body["shade"] == "success" and body["icon"] == "fas fa-user-tie"
+
+
+def test_upsert_magic_dash_suppressed_under_default_guard():
+    session = FakeSession()
+    result = _client(session).upsert_magic_dash(
+        title="T", company_name="Acme", message="m", content="c")
+    assert result is None
+    assert not any(c[0] == "POST" for c in session.calls)
