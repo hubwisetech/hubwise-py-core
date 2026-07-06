@@ -84,6 +84,20 @@ class CWManageClient:
             page += 1
         return out
 
+    def list_tickets_by_ids(self, ticket_ids, chunk_size=50):
+        """Service tickets for the given ids, fetched in ``id in (…)``
+        condition chunks so arbitrarily large id sets stay within CW's
+        URL/condition limits."""
+        ids = list(ticket_ids)
+        out = []
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i:i + chunk_size]
+            out.extend(self._get(
+                "/service/tickets",
+                params={"conditions": f"id in ({','.join(str(t) for t in chunk)})",
+                        "pageSize": self._page_size}))
+        return out
+
     def list_active_sites(self, company_id):
         """Active (non-inactive) sites for a company."""
         sites = self._get(f"/company/companies/{company_id}/sites",
