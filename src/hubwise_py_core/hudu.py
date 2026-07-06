@@ -84,6 +84,26 @@ class HuduClient:
         resp.raise_for_status()
         return resp.json()
 
+    def upsert_magic_dash(self, title, company_name, message, content,
+                          shade=None, icon=None):
+        """Create/update a MagicDash (upsert by title + company_name).
+
+        POST /api/v1/magic_dash is idempotent on (title, company_name), so this
+        is naturally a reconcile-to-desired-state write. Gated; returns None
+        when suppressed.
+        """
+        if not self._guard.check_write(f"upsert MagicDash '{title}' for '{company_name}'"):
+            return None
+        body = {"title": title, "company_name": company_name,
+                "message": message, "content": content}
+        if shade is not None:
+            body["shade"] = shade
+        if icon is not None:
+            body["icon"] = icon
+        resp = self._session.post(f"{self._base}/magic_dash", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
     def set_archived(self, company_id, asset_id, archived: bool):
         """Archive (True) or unarchive (False) an asset. Returns True if the
         write was issued, False if suppressed by the guard.
