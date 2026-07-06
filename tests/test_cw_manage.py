@@ -78,6 +78,20 @@ def test_list_client_companies_filters_non_client_and_paginates():
     assert ids == [1, 3]  # Acme + Globex (has Client among types); Vendor Co dropped
 
 
+def test_list_client_companies_excludes_deleted():
+    # A deleted CW company must never be synced, even if it still carries the
+    # Client type (e.g. Tetrad Property Group, deleted 2022 but type=Client).
+    page = [
+        {"id": 1, "identifier": "ACME", "name": "Acme",
+         "types": [{"id": 1, "name": "Client"}], "deletedFlag": False},
+        {"id": 2, "identifier": "TPGC", "name": "Tetrad Property Group",
+         "types": [{"id": 1, "name": "Client"}], "deletedFlag": True},
+    ]
+    session = FakeSession([("/company/companies", None, page)])
+    companies = _client(session).list_client_companies()
+    assert [c["id"] for c in companies] == [1]  # deleted Tetrad dropped
+
+
 def test_list_active_sites_drops_inactive():
     sites = [
         {"id": 10, "name": "OMA1", "inactiveFlag": False},

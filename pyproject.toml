@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hubwise-py-core"
-version = "0.2.1"
+version = "0.2.2"
 description = "Shared Python library for HubWise Azure Functions automation: config, write guards, HTTP retry session, structured logging, Table Storage idempotency state."
 requires-python = ">=3.12"
 dependencies = [

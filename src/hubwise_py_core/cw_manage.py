@@ -50,6 +50,9 @@ class CWManageClient:
             if not batch:
                 break
             for company in batch:
+                # Never sync a deleted CW company (can still carry type=Client).
+                if company.get("deletedFlag"):
+                    continue
                 if any(t.get("name") == "Client" for t in company.get("types", [])):
                     out.append(company)
             if len(batch) < self._page_size:
