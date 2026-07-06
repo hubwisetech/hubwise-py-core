@@ -60,6 +60,30 @@ class CWManageClient:
             page += 1
         return out
 
+    def list_contacts_with_types(self, type_names):
+        """Active contacts whose type set intersects ``type_names``.
+
+        Paginates /company/contacts and filters client-side (CW can't
+        server-filter on types/name). Excludes inactive contacts.
+        """
+        wanted = set(type_names)
+        out = []
+        page = 1
+        while True:
+            batch = self._get("/company/contacts",
+                              params={"page": page, "pageSize": self._page_size})
+            if not batch:
+                break
+            for contact in batch:
+                if contact.get("inactiveFlag", False):
+                    continue
+                if wanted & {t.get("name") for t in contact.get("types", [])}:
+                    out.append(contact)
+            if len(batch) < self._page_size:
+                break
+            page += 1
+        return out
+
     def list_active_sites(self, company_id):
         """Active (non-inactive) sites for a company."""
         sites = self._get(f"/company/companies/{company_id}/sites",
