@@ -104,6 +104,32 @@ class HuduClient:
         resp.raise_for_status()
         return resp.json()
 
+    def find_article_id(self, name):
+        """Return the id of the KB article whose name exactly matches, or None.
+
+        None on no match *or* ambiguous, same contract as find_company_id.
+        """
+        resp = self._session.get(f"{self._base}/articles", params={"name": name})
+        resp.raise_for_status()
+        matches = [a for a in resp.json().get("articles", []) if a.get("name") == name]
+        return matches[0]["id"] if len(matches) == 1 else None
+
+    def create_article(self, name, content):
+        if not self._guard.check_write(f"create Hudu article '{name}'"):
+            return None
+        body = {"article": {"name": name, "content": content}}
+        resp = self._session.post(f"{self._base}/articles", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    def update_article(self, article_id, name, content):
+        if not self._guard.check_write(f"update Hudu article {article_id} '{name}'"):
+            return None
+        body = {"article": {"name": name, "content": content}}
+        resp = self._session.put(f"{self._base}/articles/{article_id}", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
     def set_archived(self, company_id, asset_id, archived: bool):
         """Archive (True) or unarchive (False) an asset. Returns True if the
         write was issued, False if suppressed by the guard.
