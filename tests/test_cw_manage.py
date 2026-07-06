@@ -139,3 +139,32 @@ def test_site_code_empty_when_null_or_absent():
     assert CWManageClient.site_code({"id": 1, "customFields": [{"id": 15, "value": None}]}) == ""
     assert CWManageClient.site_code({"id": 1, "customFields": []}) == ""
     assert CWManageClient.site_code({"id": 1}) == ""
+
+
+def test_list_tickets_by_ids_uses_in_condition():
+    session = FakeSession([
+        ("/service/tickets", None,
+         [{"id": 101, "owner": {"name": "Amy Adams"}},
+          {"id": 102, "owner": {"name": "Bob Brown"}}]),
+    ])
+    tickets = _client(session).list_tickets_by_ids([101, 102])
+    assert {t["id"] for t in tickets} == {101, 102}
+    url, params = session.calls[0]
+    assert url.endswith("/service/tickets")
+    assert params["conditions"] == "id in (101,102)"
+
+
+def test_list_tickets_by_ids_chunks_large_id_sets():
+    session = FakeSession([("/service/tickets", None, [{"id": 1}])])
+    ids = list(range(1, 121))  # 120 ids -> 3 chunks of 50
+    _client(session).list_tickets_by_ids(ids, chunk_size=50)
+    conditions = [p["conditions"] for _, p in session.calls]
+    assert len(conditions) == 3
+    assert conditions[0].startswith("id in (1,")
+    assert conditions[2].endswith(",120)")
+
+
+def test_list_tickets_by_ids_empty_input_makes_no_calls():
+    session = FakeSession([])
+    assert _client(session).list_tickets_by_ids([]) == []
+    assert session.calls == []
