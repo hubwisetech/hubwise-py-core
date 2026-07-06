@@ -69,10 +69,34 @@ def test_find_company_id_none_when_ambiguous():
     assert _client(session).find_company_id("Acme") is None
 
 
-def test_list_assets_returns_asset_array():
+def test_list_assets_uses_layout_filtering_endpoint():
+    # Regression: the nested /companies/{id}/assets endpoint IGNORES
+    # asset_layout_id and returns ALL layers' assets. Must use the top-level
+    # /assets endpoint with company_id + asset_layout_id, which filters.
     session = FakeSession({"/assets": {"assets": [{"id": 1, "name": "OMA1", "archived": False}]}})
-    assets = _client(session).list_assets(company_id=7, layout_id=19)
-    assert [a["id"] for a in assets] == [1]
+    _client(session).list_assets(company_id=7, layout_id=19)
+    get_calls = [c for c in session.calls if c[0] == "GET"]
+    assert len(get_calls) >= 1
+    url, params = get_calls[0][1], get_calls[0][2]
+    assert url.endswith("/assets")  # NOT /companies/7/assets
+    assert "/companies/" not in url
+    assert params.get("company_id") == 7
+    assert params.get("asset_layout_id") == 19
+
+
+def test_list_assets_paginates():
+    class PagingSession(FakeSession):
+        def get(self, url, params=None, **kwargs):
+            self.calls.append(("GET", url, dict(params or {}), None))
+            page = int((params or {}).get("page", 1))
+            data = {1: [{"id": 1, "name": "A"}], 2: [{"id": 2, "name": "B"}]}.get(page, [])
+            return FakeResponse({"assets": data})
+
+    session = PagingSession()
+    assets = HuduClient(base_url="https://h.example.com", api_key="k",
+                        guard=WriteGuard(env={}), session=session,
+                        page_size=1).list_assets(company_id=7, layout_id=19)
+    assert [a["id"] for a in assets] == [1, 2]
 
 
 def test_create_asset_suppressed_under_default_guard():
