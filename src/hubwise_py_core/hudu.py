@@ -14,12 +14,14 @@ from .guards import WriteGuard
 from .http import build_session
 
 API_PREFIX = "/api/v1"
+_PAGE_SIZE = 100
 
 
 class HuduClient:
-    def __init__(self, base_url, api_key, guard: WriteGuard, session=None):
+    def __init__(self, base_url, api_key, guard: WriteGuard, session=None, page_size=_PAGE_SIZE):
         self._base = base_url.rstrip("/") + API_PREFIX
         self._guard = guard
+        self._page_size = page_size
         self._session = session if session is not None else build_session()
         self._session.headers.update({"x-api-key": api_key, "Accept": "application/json"})
 
@@ -36,12 +38,30 @@ class HuduClient:
         return matches[0]["id"] if len(matches) == 1 else None
 
     def list_assets(self, company_id, layout_id):
-        resp = self._session.get(
-            f"{self._base}/companies/{company_id}/assets",
-            params={"asset_layout_id": layout_id},
-        )
-        resp.raise_for_status()
-        return resp.json().get("assets", [])
+        """All assets for a company in one asset layout, following pagination.
+
+        Uses the TOP-LEVEL ``/assets`` endpoint with ``company_id`` +
+        ``asset_layout_id``. The nested ``/companies/{id}/assets`` endpoint
+        silently ignores ``asset_layout_id`` and returns every layout's
+        assets — which would make a site-sync archive all non-site assets.
+        """
+        out = []
+        page = 1
+        while True:
+            resp = self._session.get(
+                f"{self._base}/assets",
+                params={"company_id": company_id, "asset_layout_id": layout_id,
+                        "page": page, "page_size": self._page_size},
+            )
+            resp.raise_for_status()
+            batch = resp.json().get("assets", [])
+            if not batch:
+                break
+            out.extend(batch)
+            if len(batch) < self._page_size:
+                break
+            page += 1
+        return out
 
     # ---- gated writes ----
     def create_asset(self, company_id, layout_id, name, fields):
