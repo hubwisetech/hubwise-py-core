@@ -176,3 +176,50 @@ def test_upsert_magic_dash_suppressed_under_default_guard():
         title="T", company_name="Acme", message="m", content="c")
     assert result is None
     assert not any(c[0] == "POST" for c in session.calls)
+
+
+def test_find_article_id_exact_match():
+    session = FakeSession({"/articles": {"articles": [
+        {"id": 42, "name": "MSP 360 Backup Report"},
+        {"id": 43, "name": "MSP 360 Backup Report (old)"}]}})
+    assert _client(session).find_article_id("MSP 360 Backup Report") == 42
+
+
+def test_find_article_id_none_when_no_match_or_ambiguous():
+    session = FakeSession({"/articles": {"articles": [{"id": 43, "name": "Other"}]}})
+    assert _client(session).find_article_id("MSP 360 Backup Report") is None
+    ambiguous = FakeSession({"/articles": {"articles": [
+        {"id": 42, "name": "Report"}, {"id": 44, "name": "Report"}]}})
+    assert _client(ambiguous).find_article_id("Report") is None
+
+
+def test_create_article_issued_under_open_guard():
+    session = FakeSession()
+    result = _client(session, guard=_open_guard()).create_article(
+        name="MSP 360 Backup Report", content="<table></table>")
+    assert result is not None
+    post = [c for c in session.calls if c[0] == "POST"]
+    assert len(post) == 1 and post[0][1].endswith("/articles")
+    assert post[0][3]["article"] == {"name": "MSP 360 Backup Report",
+                                     "content": "<table></table>"}
+
+
+def test_create_article_suppressed_under_default_guard():
+    session = FakeSession()
+    assert _client(session).create_article(name="R", content="c") is None
+    assert not any(c[0] == "POST" for c in session.calls)
+
+
+def test_update_article_issued_under_open_guard():
+    session = FakeSession()
+    _client(session, guard=_open_guard()).update_article(
+        article_id=42, name="MSP 360 Backup Report", content="<p>new</p>")
+    put = [c for c in session.calls if c[0] == "PUT"]
+    assert len(put) == 1 and put[0][1].endswith("/articles/42")
+    assert put[0][3]["article"]["content"] == "<p>new</p>"
+
+
+def test_update_article_suppressed_under_default_guard():
+    session = FakeSession()
+    assert _client(session).update_article(42, "R", "c") is None
+    assert not any(c[0] == "PUT" for c in session.calls)
