@@ -168,3 +168,90 @@ def test_list_tickets_by_ids_empty_input_makes_no_calls():
     session = FakeSession([])
     assert _client(session).list_tickets_by_ids([]) == []
     assert session.calls == []
+
+
+# ---- config reads + gated writes (#7 / #14 shared) ----
+from hubwise_py_core.guards import WriteGuard  # noqa: E402
+
+
+class WriteFakeSession:
+    def __init__(self, get_pages=None):
+        self.headers = {}
+        self.calls = []  # (method, url, params, json)
+        self._get_pages = get_pages or {}
+
+    def get(self, url, params=None, **kwargs):
+        self.calls.append(("GET", url, dict(params or {}), None))
+        page = int((params or {}).get("page", 1))
+        return FakeResponse(self._get_pages.get(page, []))
+
+    def post(self, url, json=None, **kwargs):
+        self.calls.append(("POST", url, None, json))
+        return FakeResponse({"id": 555, "name": (json or {}).get("name")})
+
+    def patch(self, url, json=None, **kwargs):
+        self.calls.append(("PATCH", url, None, json))
+        return FakeResponse({"id": 1})
+
+
+def _wclient(session, guard):
+    return CWManageClient(site="api-na.myconnectwise.net", company="hubwise",
+                          public_key="pub", private_key="priv", client_id="cid",
+                          session=session, guard=guard, page_size=100)
+
+
+def _open():
+    return WriteGuard(env={"DRY_RUN": "0", "ALLOW_PROD": "1"})
+
+
+def test_list_configurations_paginates_and_passes_conditions():
+    session = WriteFakeSession(get_pages={1: [{"id": 1}] * 100, 2: [{"id": 2}]})
+    cfgs = _wclient(session, WriteGuard(env={})).list_configurations(
+        conditions='type/name="Remote Access"')
+    assert [c["id"] for c in cfgs] == [1] * 100 + [2]
+    first = [c for c in session.calls if c[0] == "GET"][0]
+    assert first[1].endswith("/company/configurations")
+    assert first[2].get("conditions") == 'type/name="Remote Access"'
+
+
+def test_create_configuration_suppressed_under_default_guard():
+    session = WriteFakeSession()
+    result = _wclient(session, WriteGuard(env={})).create_configuration({"name": "X"})
+    assert result is None
+    assert not any(c[0] == "POST" for c in session.calls)
+
+
+def test_create_configuration_issued_under_open_guard():
+    session = WriteFakeSession()
+    payload = {"name": "Acme HQ RDS - SVR1", "type": {"name": "Remote Access"}}
+    result = _wclient(session, _open()).create_configuration(payload)
+    assert result is not None
+    post = [c for c in session.calls if c[0] == "POST"][0]
+    assert post[1].endswith("/company/configurations")
+    assert post[3] == payload
+
+
+def test_update_configuration_suppressed_under_default_guard():
+    session = WriteFakeSession()
+    result = _wclient(session, WriteGuard(env={})).update_configuration(
+        7, [{"op": "replace", "path": "status", "value": {"name": "Active"}}])
+    assert result is None
+    assert not any(c[0] == "PATCH" for c in session.calls)
+
+
+def test_update_configuration_issued_under_open_guard():
+    session = WriteFakeSession()
+    ops = [{"op": "replace", "path": "name", "value": "new"}]
+    _wclient(session, _open()).update_configuration(7, ops)
+    patch = [c for c in session.calls if c[0] == "PATCH"][0]
+    assert patch[1].endswith("/company/configurations/7")
+    assert patch[3] == ops
+
+
+def test_default_client_without_guard_suppresses_writes():
+    # existing read-only callers construct without a guard; writes must not fire
+    session = WriteFakeSession()
+    client = CWManageClient(site="s", company="c", public_key="p",
+                            private_key="pk", client_id="ci", session=session)
+    assert client.create_configuration({"name": "X"}) is None
+    assert not any(c[0] == "POST" for c in session.calls)
