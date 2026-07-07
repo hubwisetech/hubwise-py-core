@@ -48,5 +48,7 @@ class CWAutomateClient:
         groups = data if isinstance(data, list) else [data]
         out = []
         for group in groups:
-            out.extend(group.get("computers") or [])
+            # CW Automate returns PascalCase fields ("Computers"); tolerate
+            # lowercase too for robustness.
+            out.extend(group.get("Computers") or group.get("computers") or [])
         return out

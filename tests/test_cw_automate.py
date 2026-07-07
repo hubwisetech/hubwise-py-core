@@ -71,6 +71,14 @@ def test_apostrophes_in_group_name_are_doubled():
     assert get[2].get("condition") == "name contains 'O''Brien''s Servers'"
 
 
+def test_reads_pascalcase_computers_key():
+    # LIVE: CW Automate returns the group's device list under "Computers"
+    # (PascalCase), like every other Automate field (Client, ComputerName).
+    client, _ = _client([{"Name": "G", "Computers": [{"ComputerName": "S1"},
+                                                     {"ComputerName": "S2"}]}])
+    assert [c["ComputerName"] for c in client.list_group_computers("x")] == ["S1", "S2"]
+
+
 def test_flattens_computers_across_returned_groups():
     client, _ = _client([
         {"Name": "A", "computers": [{"ComputerName": "S1"}, {"ComputerName": "S2"}]},
