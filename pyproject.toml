@@ -11,6 +11,7 @@ dependencies = [
     "requests>=2.31",
     "azure-identity>=1.17.0",
     "azure-data-tables>=12.5.0",
+    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]
