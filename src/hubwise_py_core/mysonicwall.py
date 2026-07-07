@@ -41,7 +41,15 @@ class MySonicWallClient:
                 f"{NSM_BASE}/auth/sso", headers=self._api_headers(),
                 json={"tenantSerial": self._tenant_serial, "code": access_code})
             sso.raise_for_status()
-            self._token = sso.json()["status"]["info"]["message"]
+            status = sso.json().get("status", {})
+            info = status.get("info") or []
+            if isinstance(info, dict):  # tolerate a non-list form
+                info = [info]
+            entry = info[0] if info else {}
+            if status.get("success") is False or entry.get("level") == "error":
+                raise RuntimeError(f"NSM SSO auth failed: {entry.get('message')}")
+            # token is carried in the (single) info entry's message
+            self._token = entry["message"]
         return self._token
 
     def list_managed_sonicwalls(self):
