@@ -28,7 +28,9 @@ class FakeSession:
         if "generate-cscaccesscode" in url:
             return FakeResponse({"content": {"accessCode": "CSC-123"}})
         if "auth/sso" in url:
-            return FakeResponse({"status": {"info": {"message": "nsm-bearer-xyz"}}})
+            # real shape: status.info is a single-element list, token in .message
+            return FakeResponse({"status": {"success": True, "info": [
+                {"code": "E_OK", "level": "info", "message": "nsm-bearer-xyz"}]}})
         return FakeResponse({}, status=404)
 
     def get(self, url, params=None, headers=None, **kwargs):
@@ -72,6 +74,23 @@ def test_bearer_reused_across_calls():
     client.list_managed_sonicwalls()
     csc_calls = [c for c in session.calls if "generate-cscaccesscode" in c[1]]
     assert len(csc_calls) == 1
+
+
+def test_sso_error_envelope_raises():
+    class ErrSession(FakeSession):
+        def post(self, url, json=None, headers=None, **kwargs):
+            self.calls.append(("POST", url, None, headers or {}, json))
+            if "generate-cscaccesscode" in url:
+                return FakeResponse({"content": {"accessCode": "CSC-123"}})
+            if "auth/sso" in url:
+                return FakeResponse({"status": {"success": False, "info": [
+                    {"code": "E_AUTH", "level": "error", "message": "bad tenant"}]}})
+            return FakeResponse({}, status=404)
+
+    client = MySonicWallClient(api_key="k", tenant_id="1", tenant_serial="X",
+                               session=ErrSession())
+    with pytest.raises(RuntimeError):
+        client.list_managed_sonicwalls()
 
 
 def test_inventory_error_envelope_raises():
