@@ -101,13 +101,41 @@ class NSMClient:
         return self._device_get(serial, "dhcp-server/ipv4/scopes/dynamic")
 
     def get_ssl_vpn_server(self, serial):
-        """Raw ``/firewall/ssl-vpn/server/base`` payload (for #9)."""
+        """Raw ``/firewall/ssl-vpn/server/base`` payload."""
         return self._device_get(serial, "ssl-vpn/server/base")
+
+    def get_ssl_vpn_accesses(self, serial):
+        """Raw ``/firewall/ssl-vpn/server/accesses`` payload (per-zone SSL VPN
+        enable state). Pair with ``parse_ssl_vpn_accesses``."""
+        return self._device_get(serial, "ssl-vpn/server/accesses")
+
+    def get_local_user_groups(self, serial):
+        """Raw ``/firewall/user/local/groups`` payload (local groups + members).
+        Pair with ``parse_local_groups``."""
+        return self._device_get(serial, "user/local/groups")
 
 
 def netmask_to_cidr(netmask):
     """Dotted-quad IPv4 netmask -> CIDR prefix length (int)."""
     return ipaddress.IPv4Network(f"0.0.0.0/{netmask}").prefixlen
+
+
+def parse_ssl_vpn_accesses(raw):
+    """Normalize ``/ssl-vpn/server/accesses`` -> ``[{zone, enable}]``."""
+    accesses = raw.get("ssl_vpn", {}).get("server", {}).get("access", [])
+    return [{"zone": a.get("zone"), "enable": bool(a.get("enable"))} for a in accesses]
+
+
+def parse_local_groups(raw):
+    """Normalize ``/user/local/groups`` -> ``{group_name: [member_name, ...]}``."""
+    groups = raw.get("user", {}).get("local", {}).get("group", [])
+    out = {}
+    for g in groups:
+        name = g.get("name")
+        if name is None:
+            continue
+        out[name] = [m.get("name") for m in g.get("member", []) if m.get("name")]
+    return out
 
 
 def parse_dhcp_scopes(raw):
