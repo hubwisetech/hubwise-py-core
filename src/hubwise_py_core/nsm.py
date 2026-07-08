@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ipaddress
 
+from .guards import WriteGuard
 from .http import build_session
 
 MSW_BASE = "https://api.mysonicwall.com/api"
@@ -24,12 +25,15 @@ class NSMClient:
     NSM SSO -> bearer. Read-only — no WriteGuard. The API key is sent
     per-request, never stored in the session's default headers."""
 
-    def __init__(self, api_key, tenant_id, tenant_serial, session=None):
+    def __init__(self, api_key, tenant_id, tenant_serial, session=None, guard=None):
         self._api_key = api_key
         self._tenant_id = tenant_id
         self._tenant_serial = tenant_serial
         self._session = session if session is not None else build_session()
         self._token = None
+        # Writes (resync_device) are gated; reads never touch the guard, so a
+        # missing guard leaves read-only callers unaffected.
+        self._guard = guard if guard is not None else WriteGuard()
 
     def _api_headers(self):
         return {"x-api-key": self._api_key, "Content-Type": "application/json"}
@@ -71,6 +75,22 @@ class NSMClient:
                 if isinstance(data.get(key), list):
                     return data[key]
         return []
+
+    def resync_device(self, serial):
+        """Trigger NSM to re-acquire (re-synchronize) a device's running config
+        into the tenant. Gated write: ``PUT /api/manager/devices/{serial}/?
+        acquire=true``. Returns True if the write was issued, False if the guard
+        suppressed it. Keeping NSM's stored config fresh is what the NSM-backed
+        syncs (#8, #9) read from.
+        """
+        if not self._guard.check_write(f"NSM re-acquire device {serial}"):
+            return False
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        resp = self._session.put(f"{NSM_BASE}/devices/{serial}/",
+                                 params={"acquire": "true"}, headers=headers)
+        resp.raise_for_status()
+        return True
 
     def _device_get(self, serial, subpath):
         """GET /firewall/<subpath> for one device; raise on SonicOS error
