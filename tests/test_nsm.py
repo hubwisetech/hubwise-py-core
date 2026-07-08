@@ -46,6 +46,10 @@ class FakeSession:
                 {"code": "E_OK", "level": "info", "message": "nsm-bearer-xyz"}]}})
         return FakeResponse({}, status=404)
 
+    def put(self, url, params=None, headers=None, **kwargs):
+        self.calls.append(("PUT", url, headers or {}, dict(params or {})))
+        return FakeResponse({"status": {"success": True}})
+
     def get(self, url, params=None, headers=None, **kwargs):
         self.calls.append(("GET", url, headers or {}, None))
         if "inventory/tenant" in url:
@@ -313,3 +317,35 @@ class TestNSMClientSslVpnReads:
         get = next(c for c in session.calls if c[0] == "GET" and "user/local/groups" in c[1])
         assert get[1].endswith("/api/manager/firewall/user/local/groups")
         assert result["user"]["local"]["group"][0]["name"] == "SSLVPN Services"
+
+
+class TestNSMClientResyncDevice:
+    def _client(self, env):
+        from hubwise_py_core.guards import WriteGuard
+        session = FakeSession(device_payloads={})
+        return NSMClient(api_key="k", tenant_id="2367080", tenant_serial="00401037ACAF",
+                         session=session, guard=WriteGuard(env=env)), session
+
+    def test_resync_issues_put_when_guard_open(self):
+        client, session = self._client({"DRY_RUN": "0", "ALLOW_PROD": "1"})
+        result = client.resync_device("2CB8EDAA45A0")
+        put = next(c for c in session.calls if c[0] == "PUT")
+        assert put[1].endswith("/api/manager/devices/2CB8EDAA45A0/")
+        assert put[3] == {"acquire": "true"}
+        assert put[2]["Authorization"] == "Bearer nsm-bearer-xyz"
+        assert put[2]["x-gms-mode"] == "True"
+        assert result is True
+
+    def test_resync_suppressed_when_guard_closed(self):
+        client, session = self._client({"DRY_RUN": "1", "ALLOW_PROD": "0"})
+        result = client.resync_device("SER")
+        assert not any(c[0] == "PUT" for c in session.calls)
+        assert result is False
+
+    def test_read_only_callers_unaffected_without_guard(self):
+        # No guard passed -> reads never touch the guard.
+        session = FakeSession(device_payloads={
+            "firewall/interfaces/ipv4": {"interfaces": []}})
+        client = make_client(session)
+        client.get_interfaces("SER")  # must not raise
+        assert not any(c[0] == "PUT" for c in session.calls)
