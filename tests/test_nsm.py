@@ -247,3 +247,69 @@ class TestNSMClientDhcpScopes:
         get = next(c for c in session.calls if c[0] == "GET" and "scopes/dynamic" in c[1])
         assert get[1].endswith("/api/manager/firewall/dhcp-server/ipv4/scopes/dynamic")
         assert get[2]["X-DEVICE-ID"] == "SER"
+
+
+class TestParseSslVpnAccesses:
+    RAW = {"ssl_vpn": {"server": {"access": [
+        {"zone": "LAN", "enable": False},
+        {"zone": "WAN", "enable": True},
+        {"zone": "DMZ", "enable": False},
+    ]}}}
+
+    def test_returns_zone_enable_pairs(self):
+        from hubwise_py_core.nsm import parse_ssl_vpn_accesses
+        out = parse_ssl_vpn_accesses(self.RAW)
+        assert {"zone": "WAN", "enable": True} in out
+        assert len(out) == 3
+
+    def test_empty_payload(self):
+        from hubwise_py_core.nsm import parse_ssl_vpn_accesses
+        assert parse_ssl_vpn_accesses({}) == []
+
+
+class TestParseLocalGroups:
+    RAW = {"user": {"local": {"group": [
+        {"name": "SSLVPN Services", "member": [{"name": "hwadmin_vpn"}, {"name": "jsmith"}]},
+        {"name": "Guest Services"},  # no member key
+        {"name": "Everyone", "member": [{"name": "domotz"}]},
+    ]}}}
+
+    def test_maps_group_to_member_names(self):
+        from hubwise_py_core.nsm import parse_local_groups
+        groups = parse_local_groups(self.RAW)
+        assert groups["SSLVPN Services"] == ["hwadmin_vpn", "jsmith"]
+        assert groups["Everyone"] == ["domotz"]
+
+    def test_group_without_members_is_empty_list(self):
+        from hubwise_py_core.nsm import parse_local_groups
+        assert parse_local_groups(self.RAW)["Guest Services"] == []
+
+    def test_empty_payload(self):
+        from hubwise_py_core.nsm import parse_local_groups
+        assert parse_local_groups({}) == {}
+
+
+class TestNSMClientSslVpnReads:
+    def _client(self):
+        session = FakeSession(device_payloads={
+            "firewall/ssl-vpn/server/accesses":
+                {"ssl_vpn": {"server": {"access": [{"zone": "WAN", "enable": True}]}}},
+            "firewall/user/local/groups":
+                {"user": {"local": {"group": [{"name": "SSLVPN Services", "member": []}]}}},
+        })
+        return make_client(session), session
+
+    def test_get_ssl_vpn_accesses_endpoint(self):
+        client, session = self._client()
+        result = client.get_ssl_vpn_accesses("2CB8EDAA45A0")
+        get = next(c for c in session.calls if c[0] == "GET" and "accesses" in c[1])
+        assert get[1].endswith("/api/manager/firewall/ssl-vpn/server/accesses")
+        assert get[2]["X-DEVICE-ID"] == "2CB8EDAA45A0"
+        assert result["ssl_vpn"]["server"]["access"][0]["zone"] == "WAN"
+
+    def test_get_local_user_groups_endpoint(self):
+        client, session = self._client()
+        result = client.get_local_user_groups("SER")
+        get = next(c for c in session.calls if c[0] == "GET" and "user/local/groups" in c[1])
+        assert get[1].endswith("/api/manager/firewall/user/local/groups")
+        assert result["user"]["local"]["group"][0]["name"] == "SSLVPN Services"
