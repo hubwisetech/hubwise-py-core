@@ -255,3 +255,93 @@ def test_default_client_without_guard_suppresses_writes():
                             private_key="pk", client_id="ci", session=session)
     assert client.create_configuration({"name": "X"}) is None
     assert not any(c[0] == "POST" for c in session.calls)
+
+
+# ---- gated ticket create + note writes ----
+
+class _Resp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+class _TicketSession:
+    """Records POSTs; returns a canned CW body."""
+    def __init__(self):
+        self.headers = {}
+        self.posts = []
+
+    def post(self, url, json=None):
+        self.posts.append((url, json))
+        return _Resp({"id": 4242, **(json or {})})
+
+
+def _ticket_client(session, allow=True):
+    from hubwise_py_core.guards import WriteGuard
+    env = {"DRY_RUN": "0", "ALLOW_PROD": "1"} if allow else {}
+    guard = WriteGuard(env=env)
+    return CWManageClient(site="cw.example", company="hwti", public_key="pk",
+                          private_key="sk", client_id="cid",
+                          session=session, guard=guard)
+
+
+def test_create_ticket_posts_and_returns_body():
+    session = _TicketSession()
+    client = _ticket_client(session)
+    result = client.create_ticket(summary="New GA firmware for 3 models",
+                                  board_name="Internal", company_id=250,
+                                  initial_description="details")
+    url, body = session.posts[0]
+    assert url.endswith("/service/tickets")
+    assert body["summary"] == "New GA firmware for 3 models"
+    assert body["board"] == {"name": "Internal"}
+    assert body["company"] == {"id": 250}
+    assert body["initialDescription"] == "details"
+    assert result["id"] == 4242
+
+
+def test_create_ticket_truncates_summary_to_100_chars():
+    session = _TicketSession()
+    client = _ticket_client(session)
+    client.create_ticket(summary="x" * 150, board_name="Internal", company_id=250)
+    _, body = session.posts[0]
+    assert len(body["summary"]) == 100
+
+
+def test_create_ticket_suppressed_by_guard():
+    session = _TicketSession()
+    client = _ticket_client(session, allow=False)
+    assert client.create_ticket(summary="s", board_name="b", company_id=1) is None
+    assert session.posts == []
+
+
+def test_add_ticket_note_posts_and_returns_body():
+    session = _TicketSession()
+    client = _ticket_client(session)
+    result = client.add_ticket_note(4242, "wave 0 verified", internal=True)
+    url, body = session.posts[0]
+    assert url.endswith("/service/tickets/4242/notes")
+    assert body == {"text": "wave 0 verified", "internalAnalysisFlag": True,
+                    "detailDescriptionFlag": False}
+    assert result["id"] == 4242
+
+
+def test_add_ticket_note_external_uses_detail_description():
+    session = _TicketSession()
+    client = _ticket_client(session)
+    client.add_ticket_note(4242, "visible to client", internal=False)
+    _, body = session.posts[0]
+    assert body == {"text": "visible to client", "internalAnalysisFlag": False,
+                    "detailDescriptionFlag": True}
+
+
+def test_add_ticket_note_suppressed_by_guard():
+    session = _TicketSession()
+    client = _ticket_client(session, allow=False)
+    assert client.add_ticket_note(4242, "t") is None
+    assert session.posts == []
