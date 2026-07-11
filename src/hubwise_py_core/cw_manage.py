@@ -142,6 +142,40 @@ class CWManageClient:
         resp.raise_for_status()
         return resp.json()
 
+    def create_ticket(self, summary, board_name, company_id, initial_description=""):
+        """Gated POST /service/tickets. CW rejects summaries over 100 chars,
+        so the summary is truncated. Returns the created ticket, or None
+        when suppressed."""
+        summary = summary[:100]
+        if not self._guard.check_write(f"create CW ticket '{summary}'"):
+            return None
+        payload = {
+            "summary": summary,
+            "board": {"name": board_name},
+            "company": {"id": company_id},
+        }
+        if initial_description:
+            payload["initialDescription"] = initial_description
+        resp = self._session.post(f"{self._base}/service/tickets", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    def add_ticket_note(self, ticket_id, text, internal=True):
+        """Gated POST /service/tickets/{id}/notes. ``internal=True`` writes an
+        internal-analysis note; ``internal=False`` a discussion (client-visible)
+        note. Returns the created note, or None when suppressed."""
+        if not self._guard.check_write(f"add note to CW ticket {ticket_id}"):
+            return None
+        payload = {
+            "text": text,
+            "internalAnalysisFlag": internal,
+            "detailDescriptionFlag": not internal,
+        }
+        resp = self._session.post(
+            f"{self._base}/service/tickets/{ticket_id}/notes", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
     def list_active_sites(self, company_id):
         """Active (non-inactive) sites for a company."""
         sites = self._get(f"/company/companies/{company_id}/sites",
