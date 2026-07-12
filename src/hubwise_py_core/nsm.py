@@ -10,6 +10,7 @@ Read-only — no WriteGuard.
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from .guards import WriteGuard
 from .http import build_session
@@ -215,3 +216,26 @@ def parse_interfaces(raw):
             "wan_dns": wan_dns,
         })
     return out
+
+
+def parse_sonicos_version(text):
+    """SonicOS version string -> comparable numeric tuple, or None.
+
+    Accepts the inventory form (``"SonicOS 7.3.1-7013"``) and the catalog
+    form (``"7.3.2-7010"``). Splits on ``.`` and ``-`` and keeps the leading
+    run of numeric segments (a trailing ``R9691``-style build tag stops the
+    run). Returns None when nothing numeric leads the string, so callers can
+    skip-and-alert instead of guessing.
+    """
+    if not text:
+        return None
+    cleaned = text.strip()
+    if cleaned.lower().startswith("sonicos"):
+        cleaned = cleaned[len("sonicos"):].strip()
+    core = cleaned.split()[0] if cleaned else ""
+    numbers = []
+    for segment in re.split(r"[.\-]", core):
+        if not segment.isdigit():
+            break
+        numbers.append(int(segment))
+    return tuple(numbers) if numbers else None

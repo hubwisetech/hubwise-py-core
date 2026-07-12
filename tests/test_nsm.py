@@ -5,6 +5,7 @@ during the §5.2 coverage audit (device HWTI-OMA1, SonicOS 7.3.2).
 """
 import pytest
 
+from hubwise_py_core import nsm
 from hubwise_py_core.nsm import (
     NSMClient,
     netmask_to_cidr,
@@ -349,3 +350,25 @@ class TestNSMClientResyncDevice:
         client = make_client(session)
         client.get_interfaces("SER")  # must not raise
         assert not any(c[0] == "PUT" for c in session.calls)
+
+
+class TestParseSonicosVersion:
+    def test_strips_sonicos_prefix(self):
+        assert nsm.parse_sonicos_version("SonicOS 7.3.1-7013") == (7, 3, 1, 7013)
+
+    def test_plain_version(self):
+        assert nsm.parse_sonicos_version("7.3.2-7010") == (7, 3, 2, 7010)
+
+    def test_trailing_non_numeric_segment_ignored(self):
+        assert nsm.parse_sonicos_version("7.3.3-7015-R9691") == (7, 3, 3, 7015)
+
+    def test_unparseable_returns_none(self):
+        assert nsm.parse_sonicos_version("unknown") is None
+        assert nsm.parse_sonicos_version("") is None
+        assert nsm.parse_sonicos_version(None) is None
+
+    def test_ordering(self):
+        older = nsm.parse_sonicos_version("SonicOS 7.3.1-7013")
+        ga = nsm.parse_sonicos_version("7.3.2-7010")
+        newer = nsm.parse_sonicos_version("7.3.3-7015")
+        assert older < ga < newer
