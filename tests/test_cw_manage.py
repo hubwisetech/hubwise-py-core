@@ -19,14 +19,24 @@ class FakeResponse:
 class FakeSession:
     """Records GET calls; serves canned responses keyed by a matcher function."""
 
-    def __init__(self, pages):
+    def __init__(self, pages=None, get_json=None, get_status=200):
         # pages: list of (path_contains, params_predicate, json) tuples, matched in order
-        self._pages = pages
+        # OR simpler: get_json (canned response body) + get_status (HTTP status code)
+        self._use_simple = pages is None  # explicit indicator of simple mode
+        self._pages = pages or []
+        self._get_json = get_json
+        self._get_status = get_status
         self.calls = []
         self.headers = {}
+        self.get_urls = []  # track URLs for test assertions
 
     def get(self, url, params=None, **kwargs):
         self.calls.append((url, dict(params or {})))
+        self.get_urls.append(url)
+        # Simple mode: pages not provided, use get_json + get_status
+        if self._use_simple:
+            return FakeResponse(self._get_json, self._get_status)
+        # Complex mode: pages provided
         for contains, pred, data in self._pages:
             if contains in url and (pred is None or pred(params or {})):
                 return FakeResponse(data)
@@ -345,3 +355,19 @@ def test_add_ticket_note_suppressed_by_guard():
     client = _ticket_client(session, allow=False)
     assert client.add_ticket_note(4242, "t") is None
     assert session.posts == []
+
+
+# ---- get_ticket reads ----
+
+class TestGetTicket:
+    def test_returns_ticket_json(self):
+        session = FakeSession(get_json={"id": 4711, "summary": "x", "closedFlag": False})
+        client = _client(session)
+        ticket = client.get_ticket(4711)
+        assert ticket["id"] == 4711
+        assert any("/service/tickets/4711" in url for url in session.get_urls)
+
+    def test_404_returns_none(self):
+        session = FakeSession(get_json=None, get_status=404)
+        client = _client(session)
+        assert client.get_ticket(999999) is None

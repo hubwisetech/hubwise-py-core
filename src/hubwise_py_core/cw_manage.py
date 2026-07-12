@@ -102,6 +102,16 @@ class CWManageClient:
                         "pageSize": self._page_size}))
         return out
 
+    def get_ticket(self, ticket_id):
+        """One service ticket by id, or None when it does not exist.
+        Read-only — used for the detect duplicate-ticket guard and the
+        Phase-C 'ticket exists and is open' run validation."""
+        resp = self._session.get(f"{self._base}/service/tickets/{ticket_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
     def list_configurations(self, conditions=None):
         """All company configurations (optionally narrowed by a CW
         ``conditions`` string, e.g. ``type/name="Remote Access"``),
