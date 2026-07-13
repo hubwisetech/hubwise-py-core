@@ -5,6 +5,7 @@ during the §5.2 coverage audit (device HWTI-OMA1, SonicOS 7.3.2).
 """
 import pytest
 
+from hubwise_py_core import nsm
 from hubwise_py_core.nsm import (
     NSMClient,
     netmask_to_cidr,
@@ -30,12 +31,13 @@ class FakeSession:
     """Routes NSM auth + per-device firewall reads by URL suffix, recording
     every call so tests can assert headers (X-DEVICE-ID, bearer)."""
 
-    def __init__(self, device_payloads=None, inventory=None, error_subpaths=()):
+    def __init__(self, device_payloads=None, inventory=None, error_subpaths=(), device_pages=None):
         self.headers = {}
         self.calls = []  # (method, url, headers, json)
         self._device_payloads = device_payloads or {}
         self._inventory = inventory if inventory is not None else []
         self._error_subpaths = set(error_subpaths)
+        self._device_pages = device_pages or {}
 
     def post(self, url, json=None, headers=None, **kwargs):
         self.calls.append(("POST", url, headers or {}, json))
@@ -52,6 +54,10 @@ class FakeSession:
 
     def get(self, url, params=None, headers=None, **kwargs):
         self.calls.append(("GET", url, headers or {}, None))
+        if "devices/tenant" in url and self._device_pages:
+            # Handle paged device list
+            page_num = (params or {}).get("page", 1)
+            return FakeResponse(self._device_pages.get(page_num, []))
         if "inventory/tenant" in url:
             return FakeResponse(self._inventory)
         for subpath, payload in self._device_payloads.items():
@@ -349,3 +355,88 @@ class TestNSMClientResyncDevice:
         client = make_client(session)
         client.get_interfaces("SER")  # must not raise
         assert not any(c[0] == "PUT" for c in session.calls)
+
+
+class TestParseSonicosVersion:
+    def test_strips_sonicos_prefix(self):
+        assert nsm.parse_sonicos_version("SonicOS 7.3.1-7013") == (7, 3, 1, 7013)
+
+    def test_plain_version(self):
+        assert nsm.parse_sonicos_version("7.3.2-7010") == (7, 3, 2, 7010)
+
+    def test_trailing_non_numeric_segment_ignored(self):
+        assert nsm.parse_sonicos_version("7.3.3-7015-R9691") == (7, 3, 3, 7015)
+
+    def test_unparseable_returns_none(self):
+        assert nsm.parse_sonicos_version("unknown") is None
+        assert nsm.parse_sonicos_version("") is None
+        assert nsm.parse_sonicos_version(None) is None
+
+    def test_ordering(self):
+        older = nsm.parse_sonicos_version("SonicOS 7.3.1-7013")
+        ga = nsm.parse_sonicos_version("7.3.2-7010")
+        newer = nsm.parse_sonicos_version("7.3.3-7015")
+        assert older < ga < newer
+
+
+DEVICE_RECORD = {
+    "serialNumber": "18C241296010",
+    "friendlyName": "MULH - OMA2 - Gretna",
+    "liveStatus": False,
+    "scheduledUpgrade": False,
+    "attributes": {"firmware_version": "SonicOS 7.3.1-7013", "model": "TZ 270"},
+    "modelInfo": {"productCode": 20405, "productName": "SONICWALL TZ 270 North America"},
+    "availableVersions": [
+        {"version": "7.3.3-7015", "releaseType": "Feature Release",
+         "releaseDate": "Jun 26, 2026", "softwareId": "26201", "downloadStatus": 3},
+        {"version": "7.3.2-7010", "releaseType": "General Release",
+         "releaseDate": "Feb 23, 2026", "softwareId": "25785", "downloadStatus": 3},
+    ],
+}
+
+
+class TestParseDeviceFirmware:
+    def test_normalizes_record(self):
+        parsed = nsm.parse_device_firmware(DEVICE_RECORD)
+        assert parsed == {
+            "serial": "18C241296010",
+            "name": "MULH - OMA2 - Gretna",
+            "live": False,
+            "model": "TZ 270",
+            "product_code": 20405,
+            "firmware": "SonicOS 7.3.1-7013",
+            "available_versions": [
+                {"version": "7.3.3-7015", "release_type": "Feature Release",
+                 "release_date": "Jun 26, 2026"},
+                {"version": "7.3.2-7010", "release_type": "General Release",
+                 "release_date": "Feb 23, 2026"},
+            ],
+            "scheduled_upgrade": False,
+        }
+
+    def test_missing_sections_are_safe(self):
+        parsed = nsm.parse_device_firmware({"serialNumber": "AAA", "liveStatus": True})
+        assert parsed["serial"] == "AAA"
+        assert parsed["live"] is True
+        assert parsed["firmware"] is None
+        assert parsed["model"] == ""
+        assert parsed["available_versions"] == []
+
+
+class TestListDevicesFirmware:
+    def test_walks_pages_until_short_page(self):
+        page1 = [dict(DEVICE_RECORD, serialNumber=f"S{i}") for i in range(2)]
+        page2 = [dict(DEVICE_RECORD, serialNumber="S9")]
+        session = FakeSession(device_pages={1: page1, 2: page2})
+        client = make_client(session)
+        out = client.list_devices_firmware(page_size=2)
+        assert [r["serialNumber"] for r in out] == ["S0", "S1", "S9"]
+
+    def test_repeated_serials_stop_the_walk(self):
+        # An endpoint that ignores paging re-serves the same fleet forever
+        # (the FWMon /v2 inventory lesson) — the de-dupe guard must break out.
+        page = [dict(DEVICE_RECORD, serialNumber="S0"), dict(DEVICE_RECORD, serialNumber="S1")]
+        session = FakeSession(device_pages={1: page, 2: page, 3: page})
+        client = make_client(session)
+        out = client.list_devices_firmware(page_size=2)
+        assert [r["serialNumber"] for r in out] == ["S0", "S1"]

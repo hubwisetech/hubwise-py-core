@@ -10,6 +10,7 @@ Read-only — no WriteGuard.
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from .guards import WriteGuard
 from .http import build_session
@@ -75,6 +76,36 @@ class NSMClient:
                 if isinstance(data.get(key), list):
                     return data[key]
         return []
+
+    def list_devices_firmware(self, page_size=50, max_pages=50):
+        """Paged walk of ``GET /devices/tenant`` — the manager-scope device
+        list whose records embed per-device firmware state AND the applicable
+        ``availableVersions`` catalog (one endpoint = inventory + catalog for
+        detect_firmware_releases). Read-only.
+
+        The v2 inventory endpoint ignores paging and re-serves the whole
+        fleet per call; this endpoint honors paging, but keep the serial
+        de-dupe guard + hard page cap so a regression can never loop forever.
+        Pair with ``parse_device_firmware``.
+        """
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        out, seen = [], set()
+        for page in range(1, max_pages + 1):
+            resp = self._session.get(f"{NSM_BASE}/devices/tenant",
+                                     params={"page": page, "limit": page_size},
+                                     headers=headers)
+            resp.raise_for_status()
+            batch = resp.json() or []
+            fresh = [r for r in batch if r.get("serialNumber") not in seen]
+            if not fresh:
+                break
+            for record in fresh:
+                seen.add(record.get("serialNumber"))
+            out.extend(fresh)
+            if len(batch) < page_size:
+                break
+        return out
 
     def resync_device(self, serial):
         """Trigger NSM to re-acquire (re-synchronize) a device's running config
@@ -215,3 +246,52 @@ def parse_interfaces(raw):
             "wan_dns": wan_dns,
         })
     return out
+
+
+def parse_sonicos_version(text):
+    """SonicOS version string -> comparable numeric tuple, or None.
+
+    Accepts the inventory form (``"SonicOS 7.3.1-7013"``) and the catalog
+    form (``"7.3.2-7010"``). Splits on ``.`` and ``-`` and keeps the leading
+    run of numeric segments (a trailing ``R9691``-style build tag stops the
+    run). Returns None when nothing numeric leads the string, so callers can
+    skip-and-alert instead of guessing.
+    """
+    if not text:
+        return None
+    cleaned = text.strip()
+    if cleaned.lower().startswith("sonicos"):
+        cleaned = cleaned[len("sonicos"):].strip()
+    core = cleaned.split()[0] if cleaned else ""
+    numbers = []
+    for segment in re.split(r"[.\-]", core):
+        if not segment.isdigit():
+            break
+        numbers.append(int(segment))
+    return tuple(numbers) if numbers else None
+
+
+def parse_device_firmware(record):
+    """Normalize one ``/devices/tenant`` record for firmware detection.
+
+    ``firmware`` keeps NSM's raw string (``"SonicOS 7.3.1-7013"``) — feed it
+    to ``parse_sonicos_version`` for comparisons. ``available_versions``
+    preserves catalog order.
+    """
+    attrs = record.get("attributes") or {}
+    model_info = record.get("modelInfo") or {}
+    available = [
+        {"version": v.get("version"), "release_type": v.get("releaseType"),
+         "release_date": v.get("releaseDate")}
+        for v in record.get("availableVersions") or []
+    ]
+    return {
+        "serial": (record.get("serialNumber") or "").strip(),
+        "name": record.get("friendlyName") or record.get("serialNumber") or "",
+        "live": bool(record.get("liveStatus")),
+        "model": attrs.get("model") or model_info.get("productName") or "",
+        "product_code": model_info.get("productCode"),
+        "firmware": attrs.get("firmware_version"),
+        "available_versions": available,
+        "scheduled_upgrade": bool(record.get("scheduledUpgrade")),
+    }
