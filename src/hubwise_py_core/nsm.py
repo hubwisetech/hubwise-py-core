@@ -10,6 +10,7 @@ Read-only — no WriteGuard.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 
 from .guards import WriteGuard
@@ -18,6 +19,21 @@ from .http import build_session
 MSW_BASE = "https://api.mysonicwall.com/api"
 NSM_BASE = "https://nsm-uswest.sonicwall.com/api/manager"
 CSC_TILE = "ISNSMSAFEENABLED"
+
+log = logging.getLogger(__name__)
+
+
+def _raise_on_error_envelope(data, context):
+    """Defensive NSM 200-with-error check: raise ONLY when the body is a dict
+    with an explicit ``status.success is False``. Any other shape (empty
+    body, list, dict without a ``status`` key) is treated as success — the
+    envelope is well documented for reads but not exhaustively verified for
+    every write, so an unforeseen-but-non-error shape must not be mistaken
+    for a rejection."""
+    if isinstance(data, dict) and data.get("status", {}).get("success") is False:
+        info = data["status"].get("info") or []
+        msg = info[0].get("message") if info else "unknown error"
+        raise RuntimeError(f"NSM {context} failed: {msg}")
 
 
 class NSMClient:
@@ -143,6 +159,13 @@ class NSMClient:
             json={"devices": list(serials), "scheduledAt": scheduled_at_ms},
             headers=headers)
         resp.raise_for_status()
+        try:
+            data = resp.json()
+        except ValueError:
+            # Truly empty/non-JSON body: unverified shape, treat as success.
+            data = None
+        log.info("NSM reboot devices %s response: %s", list(serials), data)
+        _raise_on_error_envelope(data, "reboot devices")
         return True
 
     def _device_get(self, serial, subpath):
@@ -152,10 +175,7 @@ class NSMClient:
         resp = self._session.get(f"{NSM_BASE}/firewall/{subpath}", headers=headers)
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, dict) and data.get("status", {}).get("success") is False:
-            info = data["status"].get("info") or []
-            msg = info[0].get("message") if info else "unknown error"
-            raise RuntimeError(f"NSM device read failed ({subpath}): {msg}")
+        _raise_on_error_envelope(data, f"device read ({subpath})")
         return data
 
     def get_interfaces(self, serial):

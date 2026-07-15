@@ -31,13 +31,15 @@ class FakeSession:
     """Routes NSM auth + per-device firewall reads by URL suffix, recording
     every call so tests can assert headers (X-DEVICE-ID, bearer)."""
 
-    def __init__(self, device_payloads=None, inventory=None, error_subpaths=(), device_pages=None):
+    def __init__(self, device_payloads=None, inventory=None, error_subpaths=(), device_pages=None,
+                 restart_response=None):
         self.headers = {}
         self.calls = []  # (method, url, headers, json)
         self._device_payloads = device_payloads or {}
         self._inventory = inventory if inventory is not None else []
         self._error_subpaths = set(error_subpaths)
         self._device_pages = device_pages or {}
+        self._restart_response = restart_response
 
     def post(self, url, json=None, headers=None, **kwargs):
         self.calls.append(("POST", url, headers or {}, json))
@@ -47,6 +49,8 @@ class FakeSession:
             return FakeResponse({"status": {"success": True, "info": [
                 {"code": "E_OK", "level": "info", "message": "nsm-bearer-xyz"}]}})
         if "group-action/firewall/restart" in url:
+            if self._restart_response is not None:
+                return FakeResponse(self._restart_response)
             return FakeResponse({"status": {"success": True}})
         return FakeResponse({}, status=404)
 
@@ -360,9 +364,9 @@ class TestNSMClientResyncDevice:
 
 
 class TestNSMClientRebootDevices:
-    def _client(self, env):
+    def _client(self, env, restart_response=None):
         from hubwise_py_core.guards import WriteGuard
-        session = FakeSession(device_payloads={})
+        session = FakeSession(device_payloads={}, restart_response=restart_response)
         return NSMClient(api_key="k", tenant_id="2367080", tenant_serial="00401037ACAF",
                          session=session, guard=WriteGuard(env=env)), session
 
@@ -385,6 +389,20 @@ class TestNSMClientRebootDevices:
         assert issued is False
         assert not any(c[0] == "POST" and "group-action/firewall/restart" in c[1]
                        for c in session.calls)
+
+    def test_raises_on_error_envelope(self):
+        client, session = self._client(
+            {"DRY_RUN": "0", "ALLOW_PROD": "1"},
+            restart_response={"status": {"success": False, "info": [
+                {"code": "E_BUSY", "level": "error", "message": "device busy"}]}})
+        with pytest.raises(RuntimeError, match="device busy"):
+            client.reboot_devices(["2CB8EDAA45A0"], scheduled_at_ms=1789000000000)
+
+    def test_succeeds_on_empty_or_shapeless_body(self):
+        client, session = self._client(
+            {"DRY_RUN": "0", "ALLOW_PROD": "1"}, restart_response={})
+        issued = client.reboot_devices(["2CB8EDAA45A0"], scheduled_at_ms=1789000000000)
+        assert issued is True
 
 
 class TestParseSonicosVersion:
