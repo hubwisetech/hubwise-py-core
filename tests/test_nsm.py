@@ -46,6 +46,8 @@ class FakeSession:
         if "auth/sso" in url:
             return FakeResponse({"status": {"success": True, "info": [
                 {"code": "E_OK", "level": "info", "message": "nsm-bearer-xyz"}]}})
+        if "group-action/firewall/restart" in url:
+            return FakeResponse({"status": {"success": True}})
         return FakeResponse({}, status=404)
 
     def put(self, url, params=None, headers=None, **kwargs):
@@ -355,6 +357,34 @@ class TestNSMClientResyncDevice:
         client = make_client(session)
         client.get_interfaces("SER")  # must not raise
         assert not any(c[0] == "PUT" for c in session.calls)
+
+
+class TestNSMClientRebootDevices:
+    def _client(self, env):
+        from hubwise_py_core.guards import WriteGuard
+        session = FakeSession(device_payloads={})
+        return NSMClient(api_key="k", tenant_id="2367080", tenant_serial="00401037ACAF",
+                         session=session, guard=WriteGuard(env=env)), session
+
+    def test_issues_restart_when_guard_open(self):
+        client, session = self._client({"DRY_RUN": "0", "ALLOW_PROD": "1"})
+        issued = client.reboot_devices(["2CB8EDAA45A0", "18C241296010"],
+                                        scheduled_at_ms=1789000000000)
+        assert issued is True
+        post = next(c for c in session.calls if c[0] == "POST"
+                    and "group-action/firewall/restart" in c[1])
+        assert post[1].endswith("/api/manager/group-action/firewall/restart")
+        assert post[3] == {"devices": ["2CB8EDAA45A0", "18C241296010"],
+                            "scheduledAt": 1789000000000}
+        assert post[2]["Authorization"] == "Bearer nsm-bearer-xyz"
+        assert post[2]["x-gms-mode"] == "True"
+
+    def test_suppressed_when_guard_closed(self):
+        client, session = self._client({"DRY_RUN": "1", "ALLOW_PROD": "0"})
+        issued = client.reboot_devices(["2CB8EDAA45A0"], scheduled_at_ms=1789000000000)
+        assert issued is False
+        assert not any(c[0] == "POST" and "group-action/firewall/restart" in c[1]
+                       for c in session.calls)
 
 
 class TestParseSonicosVersion:

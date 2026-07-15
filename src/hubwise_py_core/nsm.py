@@ -123,6 +123,28 @@ class NSMClient:
         resp.raise_for_status()
         return True
 
+    def reboot_devices(self, serials, scheduled_at_ms):
+        """Restart one or more managed firewalls. Gated write:
+        ``POST /api/manager/group-action/firewall/restart`` body
+        ``{devices: [serials], scheduledAt: <Unix ms UTC>}`` (manager-scope;
+        devices in the body, no X-DEVICE-ID). ``scheduled_at_ms`` is
+        milliseconds — pass the intended reboot instant (immediate = now in
+        ms). Returns True if the write was issued, False if the guard
+        suppressed it. The exact scheduledAt unit is pinned at the canary
+        reboot, not asserted here.
+        """
+        if not self._guard.check_write(
+                f"NSM reboot devices {list(serials)}"):
+            return False
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        resp = self._session.post(
+            f"{NSM_BASE}/group-action/firewall/restart",
+            json={"devices": list(serials), "scheduledAt": scheduled_at_ms},
+            headers=headers)
+        resp.raise_for_status()
+        return True
+
     def _device_get(self, serial, subpath):
         """GET /firewall/<subpath> for one device; raise on SonicOS error
         envelope, else return the parsed JSON."""
