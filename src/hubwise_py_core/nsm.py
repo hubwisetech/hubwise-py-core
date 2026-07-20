@@ -168,6 +168,71 @@ class NSMClient:
         _raise_on_error_envelope(data, "reboot devices")
         return True
 
+    def multi_upgrade(self, devices, version, release_type, release_date,
+                      next_upgrade_time):
+        """Schedule a cloud-firmware upgrade for one wave of devices. Gated
+        write: ``POST /firmware/multi-upgrade`` body {devices, version,
+        releaseType, releaseDate, localFirmware:false, nextUpgradeTime:<epoch
+        SECONDS>}. Returns the commitID (ties the batch, needed for cancel/
+        history) on success, or None if the guard suppressed the write. NSM
+        pulls the cloud image itself (localFirmware:false). The nextUpgradeTime
+        unit + exact response shape are pinned at the canary.
+        """
+        if not self._guard.check_write(
+                f"NSM multi-upgrade {list(devices)} -> {version}"):
+            return None
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        resp = self._session.post(
+            f"{NSM_BASE}/firmware/multi-upgrade",
+            json={"devices": list(devices), "version": version,
+                  "releaseType": release_type, "releaseDate": release_date,
+                  "localFirmware": False, "nextUpgradeTime": next_upgrade_time},
+            headers=headers)
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        log.info("NSM multi-upgrade %s -> %s response: %s",
+                 list(devices), version, data)
+        _raise_on_error_envelope(data, "multi-upgrade")
+        commit_id = None
+        if isinstance(data, dict):
+            commit_id = (data.get("commitID") or data.get("commitId")
+                         or data.get("commit_id"))
+        return commit_id
+
+    def get_upgrade_status(self, serial):
+        """Read a device's last-upgrade status: ``GET /firmware/upgrade-status/
+        {serial}`` -> {serial_number, status, statusInfo, upgrade_state,
+        updated_at}. Read-only."""
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        resp = self._session.get(f"{NSM_BASE}/firmware/upgrade-status/{serial}",
+                                 headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+    def cancel_commit(self, commit_id):
+        """Cancel a pending scheduled upgrade batch. Gated write:
+        ``PUT /firmware/commit/update/{commitID}`` body {isCancel:true}.
+        Returns True if issued, False if the guard suppressed it."""
+        if not self._guard.check_write(f"NSM cancel commit {commit_id}"):
+            return False
+        headers = {"x-gms-mode": "True", "x-snwl-timer": "no-reset",
+                   "Authorization": f"Bearer {self._bearer()}"}
+        resp = self._session.put(f"{NSM_BASE}/firmware/commit/update/{commit_id}",
+                                 json={"isCancel": True}, headers=headers)
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        log.info("NSM cancel commit %s response: %s", commit_id, data)
+        _raise_on_error_envelope(data, "cancel commit")
+        return True
+
     def _device_get(self, serial, subpath):
         """GET /firewall/<subpath> for one device; raise on SonicOS error
         envelope, else return the parsed JSON."""

@@ -32,7 +32,7 @@ class FakeSession:
     every call so tests can assert headers (X-DEVICE-ID, bearer)."""
 
     def __init__(self, device_payloads=None, inventory=None, error_subpaths=(), device_pages=None,
-                 restart_response=None):
+                 restart_response=None, post_json=None, get_json=None, put_json=None):
         self.headers = {}
         self.calls = []  # (method, url, headers, json)
         self._device_payloads = device_payloads or {}
@@ -40,6 +40,9 @@ class FakeSession:
         self._error_subpaths = set(error_subpaths)
         self._device_pages = device_pages or {}
         self._restart_response = restart_response
+        self._post_json = post_json
+        self._get_json = get_json
+        self._put_json = put_json
 
     def post(self, url, json=None, headers=None, **kwargs):
         self.calls.append(("POST", url, headers or {}, json))
@@ -52,10 +55,15 @@ class FakeSession:
             if self._restart_response is not None:
                 return FakeResponse(self._restart_response)
             return FakeResponse({"status": {"success": True}})
+        if "firmware/multi-upgrade" in url and self._post_json is not None:
+            return FakeResponse(self._post_json)
         return FakeResponse({}, status=404)
 
-    def put(self, url, params=None, headers=None, **kwargs):
-        self.calls.append(("PUT", url, headers or {}, dict(params or {})))
+    def put(self, url, params=None, json=None, headers=None, **kwargs):
+        body = json if json is not None else dict(params or {})
+        self.calls.append(("PUT", url, headers or {}, body))
+        if "firmware/commit/update" in url and self._put_json is not None:
+            return FakeResponse(self._put_json)
         return FakeResponse({"status": {"success": True}})
 
     def get(self, url, params=None, headers=None, **kwargs):
@@ -66,6 +74,8 @@ class FakeSession:
             return FakeResponse(self._device_pages.get(page_num, []))
         if "inventory/tenant" in url:
             return FakeResponse(self._inventory)
+        if "firmware/upgrade-status" in url and self._get_json is not None:
+            return FakeResponse(self._get_json)
         for subpath, payload in self._device_payloads.items():
             if subpath in url:
                 if subpath in self._error_subpaths:
@@ -77,9 +87,13 @@ class FakeSession:
             {"code": "E_FAIL", "level": "error", "message": "not found"}]}})
 
 
-def make_client(session):
+def make_client(session, guard=None):
     return NSMClient(api_key="k", tenant_id="2367080",
-                     tenant_serial="00401037ACAF", session=session)
+                     tenant_serial="00401037ACAF", session=session, guard=guard)
+
+
+def make_upgrade_session(post_json=None, get_json=None, put_json=None):
+    return FakeSession(post_json=post_json, get_json=get_json, put_json=put_json)
 
 
 class TestNetmaskToCidr:
@@ -488,3 +502,68 @@ class TestListDevicesFirmware:
         client = make_client(session)
         out = client.list_devices_firmware(page_size=2)
         assert [r["serialNumber"] for r in out] == ["S0", "S1"]
+
+
+class TestMultiUpgrade:
+    def test_returns_commit_id_when_guard_open(self):
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(post_json={"status": {"success": True},
+                                                  "commitID": "Ticket-1789000000000"})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "0", "ALLOW_PROD": "1"}))
+        commit = client.multi_upgrade(["2CB8EDAA45A0"], "7.3.2-7010",
+                                      "General Release", "Feb 23, 2026",
+                                      next_upgrade_time=1789000000)
+        assert commit == "Ticket-1789000000000"
+        post = next(c for c in session.calls if c[0] == "POST"
+                    and "firmware/multi-upgrade" in c[1])
+        assert "firmware/multi-upgrade" in post[1]
+        body = post[3]
+        assert body == {"devices": ["2CB8EDAA45A0"], "version": "7.3.2-7010",
+                        "releaseType": "General Release", "releaseDate": "Feb 23, 2026",
+                        "localFirmware": False, "nextUpgradeTime": 1789000000}
+
+    def test_suppressed_when_guard_closed(self):
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(post_json={"status": {"success": True},
+                                                  "commitID": "x"})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "1", "ALLOW_PROD": "0"}))
+        assert client.multi_upgrade(["S"], "7.3.2-7010", "General Release",
+                                    "Feb 23, 2026", next_upgrade_time=1) is None
+        assert not any(c[0] == "POST" for c in session.calls)
+
+    def test_raises_on_error_envelope(self):
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(post_json={"status": {"success": False,
+                                                             "info": [{"message": "no image"}]}})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "0", "ALLOW_PROD": "1"}))
+        with pytest.raises(RuntimeError):
+            client.multi_upgrade(["S"], "7.3.2-7010", "General Release", "Feb 23, 2026", 1)
+
+
+class TestUpgradeStatus:
+    def test_reads_status(self):
+        session = make_upgrade_session(get_json={"serial_number": "S", "status": "idle",
+                                                 "upgrade_state": 0})
+        client = make_client(session)
+        status = client.get_upgrade_status("S")
+        assert status["serial_number"] == "S"
+        get = next(c for c in session.calls if c[0] == "GET")
+        assert "firmware/upgrade-status/S" in get[1]
+
+
+class TestCancelCommit:
+    def test_issues_cancel_when_guard_open(self):
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(put_json={"status": {"success": True}})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "0", "ALLOW_PROD": "1"}))
+        assert client.cancel_commit("Ticket-1789") is True
+        put = next(c for c in session.calls if c[0] == "PUT")
+        assert "firmware/commit/update/Ticket-1789" in put[1]
+        assert put[3] == {"isCancel": True}
+
+    def test_suppressed_when_guard_closed(self):
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(put_json={"status": {"success": True}})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "1", "ALLOW_PROD": "0"}))
+        assert client.cancel_commit("Ticket-1789") is False
+        assert not any(c[0] == "PUT" for c in session.calls)
