@@ -177,6 +177,13 @@ class NSMClient:
         history) on success, or None if the guard suppressed the write. NSM
         pulls the cloud image itself (localFirmware:false). The nextUpgradeTime
         unit + exact response shape are pinned at the canary.
+
+        If the write is issued (guard open, POST + envelope check both pass)
+        but the response carries none of the recognized commitID key
+        spellings, raises ``RuntimeError`` instead of returning None -- the
+        write already happened, so a caller must hard-stop and alert rather
+        than treat this the same as guard-suppression (which would trigger a
+        blind retry against gear that was already upgraded).
         """
         if not self._guard.check_write(
                 f"NSM multi-upgrade {list(devices)} -> {version}"):
@@ -201,6 +208,9 @@ class NSMClient:
         if isinstance(data, dict):
             commit_id = (data.get("commitID") or data.get("commitId")
                          or data.get("commit_id"))
+        if commit_id is None:
+            raise RuntimeError(
+                f"multi-upgrade issued but response carried no commitID key: {data!r}")
         return commit_id
 
     def get_upgrade_status(self, serial):
