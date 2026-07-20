@@ -539,6 +539,17 @@ class TestMultiUpgrade:
         with pytest.raises(RuntimeError):
             client.multi_upgrade(["S"], "7.3.2-7010", "General Release", "Feb 23, 2026", 1)
 
+    def test_raises_when_issued_but_no_commit_id(self):
+        # Success envelope, but the response carries none of the recognized
+        # commitID key spellings — the write already happened, so returning
+        # None here would look identical to guard-suppression and the
+        # verify orchestrator would retry every 30 min against live gear.
+        from hubwise_py_core.guards import WriteGuard
+        session = make_upgrade_session(post_json={"status": {"success": True}})
+        client = make_client(session, guard=WriteGuard({"DRY_RUN": "0", "ALLOW_PROD": "1"}))
+        with pytest.raises(RuntimeError, match="(?i)commitid"):
+            client.multi_upgrade(["S"], "7.3.2-7010", "General Release", "Feb 23, 2026", 1)
+
 
 class TestUpgradeStatus:
     def test_reads_status(self):
